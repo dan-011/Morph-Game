@@ -11,41 +11,52 @@ __lua__
 -- implement hit boxes (if two players are in conflict, if the hitbox intersects with the player then damage is taken)
 -- implement camera shake
 -- more animations can be created to enhance experience
--- add a timer (bar) to indicate how long you can hold the bat up
--- (refactoring) make functions for each movement and change the function pointer for that movement in the plr object
+-- frog can stick out tongue to grapple walls, maybe also eat enemies
+-- implement rhino charge with trailing wind
+
+--bugs:
+
+
 function _init()
 	x_offset = 0
 	y_offset = 0
 	init_player()
 	init_env()
 	init_menu()
-	
-	degug_p = ""
-	debug_c = ""
+	init_bars()
+	init_trail()
+	flag = ""
+	camera_x = plr.x
 end
 
 function _update()
 	if(not(menu_up)) then
-		set_state()
-		plr_vel()
+		update_obj(plr)
 		move(plr)
 		animate_frame(plr)
+		x_listener()
+		update_trail()
 	else
 		menu_logic()
 	end
 	menu_listener()
+	
+	camera_x = plr.x
 end
 
 function _draw()
 	cls()
 	map(x_offset, y_offset)
+	//camera(plr.x-64+(plr.w/2), 0)
 	if(not(menu_up)) then
 		draw_spr(plr)
-		//print(plr.gvx)
-		//print(plr.vx)
+		draw_bar(energy_bar)
+		draw_bar(health_bar)
+		draw_trail()
 	else
 		draw_menu()
 	end
+	print(plr.vx)
 end
 -->8
 --player
@@ -53,6 +64,7 @@ end
 --note: when the fish and the
 --bat are moving, make the trail
 --behind them
+--this file needs refactoring
 function init_player()
 	plr = {
 		x = 30,
@@ -79,6 +91,9 @@ function init_player()
 			bottommost = 0,
 			leftmost = 0,
 			rightmost = 6,
+			set_state = gen_state,
+			set_vel = gen_vel,
+			update = human_update,
 			idle = {
 				sprites = {192,193,194,195},
 				n = 4,
@@ -106,7 +121,7 @@ function init_player()
 			},
 		},
 		frog = {
-			speed = 5,
+			speed = 6,
 			jump_height = -40,
 			gx1 = 1,
 			gx2 = 5,
@@ -115,6 +130,9 @@ function init_player()
 			bottommost = 0,
 			rightmost = 7,
 			leftmost = 0,
+			set_state = gen_state,
+			set_vel = frog_vel,
+			update = frog_update,
 			idle = {
 				sprites = {216,217},
 				n = 2,
@@ -143,6 +161,7 @@ function init_player()
 		},
 		rhino = {
 			speed = 20,
+			charge_speed = 40,
 			jump_height = -20,
 			gx1 = 1,
 			gx2 = 4,
@@ -151,6 +170,10 @@ function init_player()
 			bottommost = 0,
 			rightmost = 7,
 			leftmost = 0,
+			set_state = gen_state,
+			set_vel = gen_vel,
+			update = rhino_update,
+			x_fn = charge,
 			idle = {
 				sprites = {202,203,204,205},
 				n = 4,
@@ -187,6 +210,9 @@ function init_player()
 			bottommost = 2,
 			leftmost = 0,
 			rightmost = 7,
+			set_state = bat_state,
+			set_vel = bat_vel,
+			update = bat_update,
 			idle = {
 				sprites = {234,235,236,237},
 				n = 4,
@@ -218,15 +244,10 @@ function init_player()
 				dt = 0.05,
 			},
 		},
-
 	}
 end
 
---implement interpolation
-function plr_vel()
-	if(plr.mode == "bat") then
-		bat_vel()
-	else
+function gen_vel()
 		if(btn(➡️)) then
 			plr.gvx = get_speed(plr)
 			plr.flp = false
@@ -236,11 +257,43 @@ function plr_vel()
 		else
 			plr.gvx = 0
 		end
-		if(btnp(⬆️) and on_ground(plr)) then
+		if(btnp(⬆️) and coyote_ground(plr)) then
 			plr.vy = get_jump_height(plr)
 		end
-	end
 end
+
+function rhino_vel()
+		if(not(energy_bar.decr)) then
+			gen_vel()
+			return
+		end
+		if(plr.flp) then
+			plr.vx = plr[plr.mode].charge_speed * -1
+		else
+			plr.vx = plr[plr.mode].charge_speed
+		end
+		plr.gvx = 0
+		if(btnp(⬆️) and coyote_ground(plr)) then
+			plr.vy = get_jump_height(plr)
+		end
+end
+
+function frog_vel()
+		if(btn(➡️)) then
+			plr.gvx = get_speed(plr)
+			plr.flp = false
+		elseif(btn(⬅️)) then
+			plr.gvx = get_speed(plr) * -1
+			plr.flp = true
+		else
+			plr.gvx = 0
+		end
+		if(btnp(⬆️) and coyote_ground(plr) and energy_bar.val == energy_bar.full_val) then
+			plr.vy = get_jump_height(plr)
+			energy_bar.decr = true
+		end
+end
+
 
 function bat_state()
 	local prev_state = plr.state
@@ -256,9 +309,16 @@ end
 
 function bat_vel()
 	local grnd = on_ground(plr)
-	if(btnp(⬆️)) then
+	if(btnp(⬆️) and energy_bar.val > 0) then
 		plr.vy = get_jump_height(plr)
+		energy_bar.val -= 5
 	end
+	
+	// refactor
+	if(grnd and energy_bar.val < energy_bar.full_val) then
+		energy_bar.val += 5
+	end
+	
 	if(btn(➡️) and not(grnd)) then
 		plr.gvx = get_speed(plr)
 		plr.flp = false
@@ -267,29 +327,25 @@ function bat_vel()
 		plr.flp = true
 	elseif(btn(⬅️)) then
 		plr.flp = true
+		plr.gvx = 0 // refactor
 	elseif(btn(➡️)) then
 		plr.flp = false
+		plr.gvx = 0 // refactor
 	else
-		plr.vx = 0
 		plr.gvx = 0
 	end
 end
 
-function set_state()
-	if(plr.mode == "bat") then
-		bat_state()
-		return
-	end
+function gen_state()
 	local grnd = on_ground(plr)
 	local prev_state = plr.state
-	local can_jump = plr.mode == "human" or plr.mode == "frog" or plr.mode == "rhino"
 	if((btn(➡️) or btn(⬅️)) and grnd) then
 		plr.state = "walk"
-	elseif(btn(⬆️) or plr.vy < 0 and can_jump) then
+	elseif(btn(⬆️) or plr.vy < 0) then
 		plr.state = "jump"
-	elseif(plr.vy > 0 and not(grnd) and can_jump) then
+	elseif(plr.vy > 0 and not(grnd)) then
 		plr.state = "fall"
-	elseif (plr.vy == 0 and not(grnd) and can_jump) then
+	elseif (plr.vy == 0 and not(grnd)) then
 		plr.state = "midjump"
 	else
 		plr.state = "idle"
@@ -297,10 +353,59 @@ function set_state()
 	if(plr.state ~= prev_state) then
 		set_i(plr,1)
 	end
-	debug_p = prev_state
-	debug_c = plr.state
 end
 
+function charge()
+	if(energy_bar.val == energy_bar.full_val) then
+		energy_bar.decr = true
+	end
+end
+
+function x_listener()
+	if(btnp(❎)) then
+		local x_fn = plr[plr.mode].x_fn
+		x_fn()
+	end
+end
+
+function human_update()
+	gen_state()
+	gen_vel()
+end
+
+function rhino_update()
+	decr_cont(energy_bar,10)
+	if(energy_bar.decr) then
+		create_trail(plr)
+	end
+	gen_state()
+	rhino_vel()
+end
+
+function frog_update()
+	decr_cont(energy_bar,5)
+	gen_state()
+	frog_vel()
+end
+
+function bat_update()
+	bat_state()
+	bat_vel()
+end
+
+function draw_wind()
+	local x = plr.x
+	local y = plr.y
+	local flp = plr.flp
+	if(flp == true) then
+		x += 8
+	else
+		x -= 8
+	end
+	spr(248,x,y,1,1,flp)
+	print(x)
+	print(plr.x)
+end
 -->8
 --animations
 
@@ -475,6 +580,40 @@ function change_mode(obj, mode)
 end
 
 --top down collide prob not neccessary
+
+function get_set_state(obj)
+	local mode = obj.mode
+	return obj[mode].set_state
+end
+
+function get_set_vel(obj)
+	local mode = obj.mode
+	return obj[mode].set_vel
+end
+
+function update_obj(obj)
+	local update = obj[obj.mode].update
+	update()
+end
+
+function coyote_ground(obj)
+	local temp_obj = {
+		x = obj.x,
+		y = obj.y,
+		mode = "temp",
+		temp = {
+			gx1 = obj[obj.mode].gx1,
+			gx2 = obj[obj.mode].gx2,
+			gy = obj[obj.mode].gy,
+		}
+	}
+	if(obj.flp) then // facing left
+		temp_obj.x += 4
+	else
+		temp_obj.x -= 4
+	end
+	return on_ground(temp_obj)
+end
 -->8
 --environment
 function init_env()
@@ -616,6 +755,131 @@ function approach(goal, cur, dt)
 		return goal
 	end
 end
+-->8
+--status bars
+
+function init_bars()
+	energy_bar = {
+		x1 = 2,
+		y1 = 10,
+		x2 = 42,
+		y2 = 16,
+		full = 36,
+		val = 100,
+		full_val = 100,
+		clr = 10,
+		vis = true,
+		decr = false,
+	}
+	health_bar = {
+		x1 = 2,
+		y1 = 2,
+		x2 = 42,
+		y2 = 8,
+		full = 36,
+		val = 100,
+		full_val = 100,
+		clr = 11,
+		vis = true,
+		decr = false,
+	}
+end
+
+function set_bar_val(bar, val)
+	bar.val = val
+end
+
+function get_bar_val(bar)
+	return bar.val
+end
+
+function draw_bar(bar)
+	if(not(bar.vis)) then
+		return
+	end
+	local bar_w = bar.full*bar.val/100
+	rect(
+		bar.x1,
+		bar.y1,
+		bar.x2,
+		bar.y2,
+		6
+	)
+	if(bar.val <= 0) then
+		bar.val = 0
+	else
+		rectfill(
+			bar.x1 + 2,
+			bar.y1 + 2,
+			bar.x1 + 2 + bar_w,
+			bar.y2 - 2,
+			bar.clr
+		)
+	end
+end
+
+function decr_cont(bar,decr)
+	if(bar.decr) then
+		bar.val -= decr
+		if(bar.val <= 0) then
+			bar.val = 0
+			bar.decr = false
+		end
+	elseif(bar.val < bar.full_val) then
+		bar.val += decr
+		if(bar.val >= bar.full_val) then
+			bar.val = bar.full_val
+		end
+	end
+end
+-->8
+--trail
+function init_trail()
+	trail = {
+		parts = {},
+	}
+end
+
+function create_trail(obj)
+	local ofst = 0
+	if(obj.flp) then
+		ofst = 8
+	end
+	for i = 1,10 do
+		add(trail.parts,{
+			x = obj.x+ofst,
+			y = 4+obj.y+rnd(4),
+			r = rnd(2),
+			c = 6,
+			speed =1+rnd(2),
+			l = 10,
+		})
+	end
+end
+
+function update_trail()
+//	trail.force += .1*trail.forced*rnd(1)
+//	if(trail.force > 2 or trail.force < -1) then
+//		trail.forced = trail.forced * -1
+//	end
+//	trail.force += trail.forced
+
+	for p in all(trail.parts) do
+//		p.y -= p.speed
+		p.l -= 1
+		p.r -= .1
+//		p.x += trail.force
+		if(p.l < 0) then
+			del(trail.parts, p)
+		end
+	end
+end
+
+function draw_trail()
+	for p in all(trail.parts) do
+		circfill(p.x,p.y,p.r,p.c)
+	end
+end
 __gfx__
 0000000033d333dd0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000511511550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -737,14 +1001,13 @@ __gfx__
 000dd000000dd000000dd000111dd111011dd110001dd100011dd110111dd111000dd000000dd000000d0d000001110001111100000d0d000000000053535350
 0000000000000000000000000000000011000011011001101100001100000000000000000000000000000000000000000000000000000000000000000b000b00
 000000000000000000000000000000000000000011000011000000000000000000000000000000000000000000000000000000000000000000000000b000b000
-00000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000
-e000eee00e00eee000e0eee00e00eee0e000eee00e00eee000e0eee00e00eee00600000000000000000000000000000000000000000000000000000000000000
-ce0ecccc0e0ecccc00eccccc0e0eccccce0ecccc0e0ecccc00eccccc0e0ecccc0066066600000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+e000eee00e00eee000e0eee00e00eee0e000eee00e00eee000e0eee00e00eee00000000000000000000000000000000000000000000000000000000000000000
+ce0ecccc0e0ecccc00eccccc0e0eccccce0ecccc0e0ecccc00eccccc0e0ecccc0000000000000000000000000000000000000000000000000000000000000000
 6cccc72c0cccc72c00ccc72c0cccc72c6cccc72c06ccc72c006cc72c06ccc72c0000000000000000000000000000000000000000000000000000000000000000
-c6cacccc06cacccc006acccc06caccccc6cacccc0ccacccc00cacccc0ccacccc6606606600000000000000000000000000000000000000000000000000000000
+c6cacccc06cacccc006acccc06caccccc6cacccc0ccacccc00cacccc0ccacccc0000000000000000000000000000000000000000000000000000000000000000
 ca0cacac0a0cacac00acacac0a0cacacca0cacac0a0cacac00acacac0a0cacac0000000000000000000000000000000000000000000000000000000000000000
-a00066600a00666000a066600a006660a00066600a00666000a066600a0066600066066600000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000
+a00066600a00666000a066600a006660a00066600a00666000a066600a0066600000000000000000000000000000000000000000000000000000000000000000
 __gff__
 0003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -756,7 +1019,7 @@ __map__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000085a59c9fa5a50000b3b40000a5f98f8dab
 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000859c9faaa5a5000000000000a5a5a58f8d
 00aa01010100000000000101010101000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000858a000000000000000000000000a5a59d
-010101010101010101010101010101010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000858a00f9a4000000808100a5f9f9f9f99d
+010101010101010101010101010101010101010101010101010101010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000858a00f9a4000000808100a5f9f9f9f99d
 000000aaaaaaaa0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000858a00b3b4000000909100a5f9f9f9a59d
 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000858a00000000000000000000f9a9a5a59d
 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000859a8e000000000000000000a5a5a59e9b
