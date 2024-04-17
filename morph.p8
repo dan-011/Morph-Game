@@ -13,10 +13,27 @@ __lua__
 -- more animations can be created to enhance experience
 -- frog can stick out tongue to grapple walls, maybe also eat enemies
 -- implement rhino charge with trailing wind
+-- fine tune forigving second jump
 
 --quandries:
 -- should we be able to move if we jump straight up
 
+--notes:
+-- make sure that different parts of the map actually feel different mechanically and artistically
+-- animals should make advancements to their own abilities
+-- 	rhino
+--			get sharper/bigger horns
+--			gets the boost
+--		frog
+--			gets the grapple
+--   can swallow and spit enemies (doesn't kill them)
+--  bat
+--			drops pellets
+--			flies for longer (decrement is smaller)
+--  
+--  fish
+--   swims faster
+--   has a venomous tail that injures enemies that attack from the rear
 --bugs:
 
 
@@ -84,6 +101,7 @@ function init_player()
 		vy = 0,
 		gvx = 0,
 		vis = true,
+		jump_time = 0,
 		human = {
 			speed = 10,
 			jump_height = -20,
@@ -250,6 +268,16 @@ function init_player()
 	}
 end
 
+function gen_jump()
+	local cg = coyote_ground(plr)
+	local jump_again = cg and (time() - plr.jump_time < 0.3)
+	if((btnp(⬆️) and cg) or jump_again) then
+		plr.vy = get_jump_height(plr)
+	elseif(btnp(⬆️)) then
+	 plr.jump_time = time()
+	end
+end
+
 function gen_vel()
 		if(btn(➡️)) then
 			plr.gvx = get_speed(plr)
@@ -260,9 +288,7 @@ function gen_vel()
 		else
 			plr.gvx = 0
 		end
-		if(btnp(⬆️) and coyote_ground(plr)) then
-			plr.vy = get_jump_height(plr)
-		end
+		gen_jump()
 end
 
 function rhino_vel()
@@ -276,9 +302,7 @@ function rhino_vel()
 			plr.vx = plr[plr.mode].charge_speed
 		end
 		plr.gvx = 0
-		if(btnp(⬆️) and coyote_ground(plr)) then
-			plr.vy = get_jump_height(plr)
-		end
+		gen_jump()
 end
 
 function frog_vel()
@@ -291,9 +315,11 @@ function frog_vel()
 		else
 			plr.gvx = 0
 		end
-		if(btnp(⬆️) and coyote_ground(plr) and energy_bar.val == energy_bar.full_val) then
-			plr.vy = get_jump_height(plr)
-			energy_bar.decr = true
+	if(btnp(⬆️) and energy_bar.val == energy_bar.full_val) then
+			gen_jump()
+			if(plr.vy < 0) then // if we initiated a jump
+				energy_bar.decr = true
+			end
 		end
 end
 
