@@ -14,6 +14,9 @@ __lua__
 -- frog can stick out tongue to grapple walls, maybe also eat enemies
 -- implement rhino charge with trailing wind
 
+--quandries:
+-- should we be able to move if we jump straight up
+
 --bugs:
 
 
@@ -47,7 +50,6 @@ end
 function _draw()
 	cls()
 	map(x_offset, y_offset)
-	//camera(plr.x-64+(plr.w/2), 0)
 	if(not(menu_up)) then
 		draw_spr(plr)
 		draw_bar(energy_bar)
@@ -57,6 +59,7 @@ function _draw()
 		draw_menu()
 	end
 	print(plr.vx)
+	print(plr.vy)
 end
 -->8
 --player
@@ -376,7 +379,7 @@ end
 function rhino_update()
 	decr_cont(energy_bar,10)
 	if(energy_bar.decr) then
-		create_trail(plr)
+		create_trail(plr,⬅️,10)
 	end
 	gen_state()
 	rhino_vel()
@@ -386,6 +389,9 @@ function frog_update()
 	decr_cont(energy_bar,5)
 	gen_state()
 	frog_vel()
+	if(plr.vy < 0) then
+		create_trail(plr,⬆️,2)
+	end
 end
 
 function bat_update()
@@ -393,19 +399,7 @@ function bat_update()
 	bat_vel()
 end
 
-function draw_wind()
-	local x = plr.x
-	local y = plr.y
-	local flp = plr.flp
-	if(flp == true) then
-		x += 8
-	else
-		x -= 8
-	end
-	spr(248,x,y,1,1,flp)
-	print(x)
-	print(plr.x)
-end
+
 -->8
 --animations
 
@@ -840,15 +834,31 @@ function init_trail()
 	}
 end
 
-function create_trail(obj)
+function create_trail(obj,dir,freq)
 	local ofst = 0
 	if(obj.flp) then
 		ofst = 8
 	end
-	for i = 1,10 do
+	for i = 1,freq do
+		local cx = obj.x
+		local cy = obj.y
+		if(dir == ⬅️) then
+			if(obj.flp) then
+				cx += 8
+			end
+			cy += 4 + rnd(4)
+		elseif(dir == ⬆️) then
+			cy += 8
+			cx += 2 + rnd(2)
+			if(not(obj.flp)) then
+				cx -= 1
+			else
+				cx += 1
+			end
+		end
 		add(trail.parts,{
-			x = obj.x+ofst,
-			y = 4+obj.y+rnd(4),
+			x = cx,
+			y = cy,
 			r = rnd(2),
 			c = 6,
 			speed =1+rnd(2),
