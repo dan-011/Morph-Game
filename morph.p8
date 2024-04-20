@@ -270,7 +270,7 @@ end
 
 function gen_jump()
 	local cg = coyote_ground(plr)
-	local jump_again = cg and (time() - plr.jump_time < 0.3)
+	local jump_again = cg and (time() - plr.jump_time < 0.2)
 	if((btnp(⬆️) and cg) or jump_again) then
 		plr.vy = get_jump_height(plr)
 	elseif(btnp(⬆️)) then
